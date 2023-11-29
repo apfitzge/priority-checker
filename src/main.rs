@@ -52,6 +52,7 @@ fn main() {
 
     let transactions = block.transactions.unwrap();
     for transaction in transactions {
+        let mut is_violation = false;
         let Some(addresses) =
             Option::<UiLoadedAddresses>::from(transaction.meta.unwrap().loaded_addresses)
         else {
@@ -72,7 +73,7 @@ fn main() {
             match last_access_map.entry(write_account) {
                 Entry::Occupied(mut entry) => {
                     if entry.get().priority < priority {
-                        violation_count += 1;
+                        is_violation = true;
                         violated_accounts
                             .entry(write_account)
                             .or_default()
@@ -103,7 +104,7 @@ fn main() {
                     if entry.get().last_access == LastAccess::Write
                         && entry.get().priority < priority
                     {
-                        violation_count += 1;
+                        is_violation = true;
                         violated_accounts
                             .entry(read_account)
                             .or_default()
@@ -122,6 +123,10 @@ fn main() {
                     });
                 }
             }
+        }
+
+        if is_violation {
+            violation_count += 1;
         }
     }
 
