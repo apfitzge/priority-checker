@@ -33,10 +33,6 @@ fn main() {
     } = Cli::parse();
 
     let client = RpcClient::new("https://api.mainnet-beta.solana.com");
-    // let Ok(block) = client.get_block(slot) else {
-    //     eprintln!("Failed to fetch block at slot {slot}");
-    //     exit(1);
-    // };
     let block = client
         .get_block_with_config(
             slot,
@@ -50,32 +46,51 @@ fn main() {
                 max_supported_transaction_version: Some(0),
             },
         )
-        .unwrap();
+        .unwrap_or_else(|err| {
+            eprintln!("Failed to fetch block at slot {}: {}", slot, err);
+            exit(1);
+        });
 
     let mut last_access_map: HashMap<Pubkey, LastAccessPriority> = HashMap::default();
     let mut violated_accounts: HashMap<Pubkey, Vec<[u64; 2]>> = HashMap::new();
     let mut violation_count = 0;
 
-    let transactions = block.transactions.unwrap();
+    let transactions = block.transactions.unwrap_or_else(|| {
+        eprintln!("Block does not have transactions, something is misconfigured");
+        exit(1);
+    });
     for transaction in transactions {
         let mut is_violation = false;
-        let Some(addresses) =
-            Option::<UiLoadedAddresses>::from(transaction.meta.unwrap().loaded_addresses)
-        else {
-            eprintln!("Failed to fetch block at slot {slot}");
+        let Some(addresses) = Option::<UiLoadedAddresses>::from(
+            transaction
+                .meta
+                .unwrap_or_else(|| {
+                    eprintln!("Transactions do not have metadata, something is misconfigured");
+                    exit(1);
+                })
+                .loaded_addresses,
+        ) else {
+            eprintln!("Transactions do not have loaded addresses, something is misconfigured");
             exit(1);
         };
 
-        let versioned_transaction = transaction.transaction.decode().unwrap();
-        let sanitized_transaction =
-            SanitizedVersionedTransaction::try_new(versioned_transaction).unwrap();
+        let versioned_transaction = transaction.transaction.decode().unwrap_or_else(|| {
+            eprintln!("Failed to decode transaction");
+            exit(1);
+        });
+        let sanitized_transaction = SanitizedVersionedTransaction::try_new(versioned_transaction)
+            .unwrap_or_else(|err| {
+                eprintln!("Failed to sanitize transaction: {err}");
+                exit(1);
+            });
         let priority: u64 = get_priority(&sanitized_transaction);
 
-        for write_account in addresses
-            .writable
-            .iter()
-            .map(|k| Pubkey::from_str(k).unwrap())
-        {
+        for write_account in addresses.writable.iter().map(|k| {
+            Pubkey::from_str(k).unwrap_or_else(|err| {
+                eprintln!("Failed to parse pubkey {k}: {err}");
+                exit(1);
+            })
+        }) {
             match last_access_map.entry(write_account) {
                 Entry::Occupied(mut entry) => {
                     if entry.get().priority < priority {
@@ -100,11 +115,12 @@ fn main() {
             }
         }
 
-        for read_account in addresses
-            .readonly
-            .iter()
-            .map(|k| Pubkey::from_str(k).unwrap())
-        {
+        for read_account in addresses.readonly.iter().map(|k| {
+            Pubkey::from_str(k).unwrap_or_else(|err| {
+                eprintln!("Failed to parse pubkey {k}: {err}");
+                exit(1);
+            })
+        }) {
             match last_access_map.entry(read_account) {
                 Entry::Occupied(mut entry) => {
                     if entry.get().last_access == LastAccess::Write
@@ -170,9 +186,15 @@ fn get_priority(transaction: &SanitizedVersionedTransaction) -> u64 {
                     return (additional_fee as u128)
                         .saturating_mul(MICRO_LAMPORTS_PER_LAMPORT)
                         .checked_div(units as u128)
-                        .unwrap()
+                        .unwrap_or_else(|| {
+                            eprintln!("Failed to calculate priority");
+                            exit(1);
+                        })
                         .try_into()
-                        .unwrap();
+                        .unwrap_or_else(|err| {
+                            eprintln!("Failed to calculate priority: {err}");
+                            exit(1);
+                        });
                 }
                 Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) => {
                     return price;
