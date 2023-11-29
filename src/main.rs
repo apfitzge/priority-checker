@@ -7,6 +7,7 @@ use {
         commitment_config::{CommitmentConfig, CommitmentLevel},
         compute_budget::{self, ComputeBudgetInstruction},
         pubkey::Pubkey,
+        signature::Signature,
         transaction::SanitizedVersionedTransaction,
     },
     solana_transaction_status::{TransactionDetails, UiLoadedAddresses, UiTransactionEncoding},
@@ -53,7 +54,7 @@ fn main() {
 
     let mut last_access_map: HashMap<Pubkey, LastAccessPriority> = HashMap::default();
     let mut violated_accounts: HashMap<Pubkey, Vec<[u64; 2]>> = HashMap::new();
-    let mut violation_count = 0;
+    let mut violating_transaction_signatures: Vec<Signature> = Vec::new();
 
     let transactions = block.transactions.unwrap_or_else(|| {
         eprintln!("Block does not have transactions, something is misconfigured");
@@ -78,6 +79,7 @@ fn main() {
             eprintln!("Failed to decode transaction");
             exit(1);
         });
+        let signature = versioned_transaction.signatures[0];
         let sanitized_transaction = SanitizedVersionedTransaction::try_new(versioned_transaction)
             .unwrap_or_else(|err| {
                 eprintln!("Failed to sanitize transaction: {err}");
@@ -148,12 +150,12 @@ fn main() {
         }
 
         if is_violation {
-            violation_count += 1;
+            violating_transaction_signatures.push(signature);
         }
     }
 
     if display_count_only {
-        println!("{}", violation_count);
+        println!("{}", violating_transaction_signatures.len());
         return;
     }
 
@@ -162,7 +164,7 @@ fn main() {
     } else {
         println!(
             "{} priority violations found on {} accounts:",
-            violation_count,
+            violating_transaction_signatures.len(),
             violated_accounts.len()
         );
         for (account, violations) in violated_accounts {
@@ -170,6 +172,10 @@ fn main() {
             for violation in violations {
                 println!("  {} -> {}", violation[0], violation[1]);
             }
+        }
+        println!("Violating transactions:");
+        for signature in violating_transaction_signatures {
+            println!("{}", signature);
         }
     }
 }
