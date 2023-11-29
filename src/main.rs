@@ -12,7 +12,7 @@ use {
     },
     solana_transaction_status::{TransactionDetails, UiLoadedAddresses, UiTransactionEncoding},
     std::{
-        collections::{hash_map::Entry, HashMap},
+        collections::{hash_map::Entry, HashMap, HashSet},
         process::exit,
         str::FromStr,
     },
@@ -54,7 +54,7 @@ fn main() {
 
     let mut last_access_map: HashMap<Pubkey, LastAccessPriority> = HashMap::default();
     let mut violated_accounts: HashMap<Pubkey, Vec<[u64; 2]>> = HashMap::new();
-    let mut violating_transaction_signatures: Vec<Signature> = Vec::new();
+    let mut violating_transaction_signatures: Vec<(Vec<Signature>, Signature)> = Vec::new();
 
     let transactions = block.transactions.unwrap_or_else(|| {
         eprintln!("Block does not have transactions, something is misconfigured");
@@ -87,6 +87,7 @@ fn main() {
             });
         let priority: u64 = get_priority(&sanitized_transaction);
 
+        let mut violating_signatures = HashSet::new();
         for write_account in addresses.writable.iter().map(|k| {
             Pubkey::from_str(k).unwrap_or_else(|err| {
                 eprintln!("Failed to parse pubkey {k}: {err}");
@@ -101,17 +102,20 @@ fn main() {
                             .entry(write_account)
                             .or_default()
                             .push([entry.get().priority, priority]);
+                        violating_signatures.insert(entry.get().signature);
                     }
 
                     entry.insert(LastAccessPriority {
                         last_access: LastAccess::Write,
                         priority,
+                        signature,
                     });
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(LastAccessPriority {
                         last_access: LastAccess::Write,
                         priority,
+                        signature,
                     });
                 }
             }
@@ -133,24 +137,30 @@ fn main() {
                             .entry(read_account)
                             .or_default()
                             .push([entry.get().priority, priority]);
+                        violating_signatures.insert(entry.get().signature);
                     }
 
                     entry.insert(LastAccessPriority {
                         last_access: LastAccess::Read,
                         priority,
+                        signature,
                     });
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(LastAccessPriority {
                         last_access: LastAccess::Read,
                         priority,
+                        signature,
                     });
                 }
             }
         }
 
         if is_violation {
-            violating_transaction_signatures.push(signature);
+            let mut violating_signatures: Vec<_> = violating_signatures.into_iter().collect();
+            violating_signatures.sort();
+
+            violating_transaction_signatures.push((violating_signatures, signature));
         }
     }
 
@@ -174,8 +184,8 @@ fn main() {
             }
         }
         println!("Violating transactions:");
-        for signature in violating_transaction_signatures {
-            println!("{}", signature);
+        for (previous_signatures, signature) in violating_transaction_signatures {
+            println!("{:?} -> {}", previous_signatures, signature);
         }
     }
 }
@@ -222,4 +232,5 @@ enum LastAccess {
 struct LastAccessPriority {
     last_access: LastAccess,
     priority: u64,
+    signature: Signature,
 }
