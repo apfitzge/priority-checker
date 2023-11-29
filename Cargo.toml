@@ -9,3 +9,4 @@ edition = "2021"
 clap = { version = "4.4.10", features = ["derive"] }
 solana-client = "1.17.6"
 solana-sdk = "1.17.6"
+solana-transaction-status = "1.17.6"

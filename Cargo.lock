@@ -2408,6 +2408,7 @@ dependencies = [
  "clap 4.4.10",
  "solana-client",
  "solana-sdk",
+ "solana-transaction-status",
 ]
 
 [[package]]
