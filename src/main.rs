@@ -21,10 +21,16 @@ use {
 struct Cli {
     /// Slot to fetch block and perform priority checks for.
     slot: Slot,
+    /// Display number of violations only.
+    #[clap(short = 'c', long, default_value_t = false)]
+    display_count_only: bool,
 }
 
 fn main() {
-    let Cli { slot } = Cli::parse();
+    let Cli {
+        slot,
+        display_count_only,
+    } = Cli::parse();
 
     let client = RpcClient::new("https://api.mainnet-beta.solana.com");
     // let Ok(block) = client.get_block(slot) else {
@@ -128,6 +134,11 @@ fn main() {
         if is_violation {
             violation_count += 1;
         }
+    }
+
+    if display_count_only {
+        println!("{}", violation_count);
+        return;
     }
 
     if violated_accounts.is_empty() {
