@@ -85,15 +85,10 @@ fn main() {
                 eprintln!("Failed to sanitize transaction: {err}");
                 exit(1);
             });
-        let priority: u64 = get_priority(&sanitized_transaction);
+        let priority = get_priority(&sanitized_transaction);
 
         let mut violating_signatures = HashSet::new();
-        for write_account in addresses.writable.iter().map(|k| {
-            Pubkey::from_str(k).unwrap_or_else(|err| {
-                eprintln!("Failed to parse pubkey {k}: {err}");
-                exit(1);
-            })
-        }) {
+        for write_account in addresses.writable.iter().map(parse_pubkey) {
             match last_access_map.entry(write_account) {
                 Entry::Occupied(mut entry) => {
                     if entry.get().priority < priority {
@@ -121,12 +116,7 @@ fn main() {
             }
         }
 
-        for read_account in addresses.readonly.iter().map(|k| {
-            Pubkey::from_str(k).unwrap_or_else(|err| {
-                eprintln!("Failed to parse pubkey {k}: {err}");
-                exit(1);
-            })
-        }) {
+        for read_account in addresses.readonly.iter().map(parse_pubkey) {
             match last_access_map.entry(read_account) {
                 Entry::Occupied(mut entry) => {
                     if entry.get().last_access == LastAccess::Write
@@ -188,6 +178,13 @@ fn main() {
             println!("{:?} -> {}", previous_signatures, signature);
         }
     }
+}
+
+fn parse_pubkey(s: impl AsRef<str>) -> Pubkey {
+    Pubkey::from_str(s.as_ref()).unwrap_or_else(|err| {
+        eprintln!("Failed to parse pubkey {}: {}", s.as_ref(), err);
+        exit(1);
+    })
 }
 
 fn get_priority(transaction: &SanitizedVersionedTransaction) -> u64 {
